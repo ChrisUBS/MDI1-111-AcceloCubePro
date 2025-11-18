@@ -8,12 +8,12 @@
 import SwiftUI
 
 @main
-struct MDI1_111_AcceloCubeProApp: App {
-    @StateObject private var vm = MotionVM()
+struct AcceloCubeProApp: App {
+    @StateObject private var motionVM = MotionVM()
     
     var body: some Scene {
         WindowGroup {
-            OrientationRootView(vm: vm)
+            ContentView(vm: motionVM)
         }
     }
 }

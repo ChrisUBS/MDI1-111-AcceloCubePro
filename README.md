@@ -1,132 +1,178 @@
-# Orientation Visualizer
-
-An interactive device orientation visualizer built with **SwiftUI + CoreMotion + SceneKit**.  
-It displays real-time **roll**, **pitch**, **yaw**, and a 3D cube that rotates using quaternion data.  
-Fully supports both **real devices** and the **iOS simulator** through a built-in **demo mode**.
+# 🧭 AcceloCubePro  
+**Attitude-Driven Cube with Gravity / User-Acceleration Split**  
+Author: *Christian Bonilla* 
 
 ---
 
-## 📱 Device / Simulator Used
-
-- **Environment:** Xcode Simulator  
-- **Simulated device:** iPhone 15 Pro (iOS 18.1)  
-- **Physical sensors:** Not available (Demo mode enabled)
-
----
-
-## ⚙️ Main Parameters
-
-| Parameter | Description | Value |
-|------------|-------------|--------|
-| **α (alpha)** | Low-pass filter coefficient for smooth motion data | `0.15` |
-| **Hz (sampling rate)** | Sensor update frequency | `60 Hz` |
-| **Demo Mode** | Simulates roll/pitch/yaw and quaternion updates | Enabled |
-| **3D Cube Mode** | Displays SceneKit cube rotation using quaternions | Enabled |
+## 📘 Overview  
+**AcceloCubePro** is a SwiftUI + SceneKit application that visualizes real-time device orientation and motion using CoreMotion’s **CMDeviceMotion** sensor fusion.  
+It separates **gravity** from **user acceleration**, integrates acceleration into position, and applies live-tunable **smoothing** and **damping** filters for stable visualization.  
+A built-in **Demo Mode** allows full functionality even inside the iOS Simulator.  
 
 ---
 
-## 🚀 Implemented Features
-
-✅ **Bubble Level Visualization**  
-- Circular frame with a moving bubble that responds to roll and pitch.  
-- Highlights “level” state when both angles are within ±3°.  
-
-✅ **Real-Time 3D Rotation**  
-- Cube rendered using **SceneKit**.  
-- Orientation updates with quaternion data (`qx`, `qy`, `qz`, `qw`).  
-
-✅ **Demo Mode (Simulator Support)**  
-- Generates smooth sinusoidal roll/pitch waves.  
-- Dynamically rotates the cube using quaternion math.  
-- Allows full app testing without a physical device.  
-
-✅ **Interactive Controls**  
-- `Demo mode` toggle → Enables or disables simulation.  
-- `3D cube` toggle → Shows or hides the 3D cube.  
-- `Hz` slider → Adjusts the update frequency (15–100 Hz).  
-- Buttons: **Start**, **Stop**, **Calibrate**.
+## 🎯 Learning Objectives  
+- Apply CoreMotion’s **CMDeviceMotion** to obtain:  
+  - Attitude (Quaternion)  
+  - Gravity vector  
+  - User Acceleration  
+- Implement **low-pass** and **damping** filters for motion data.  
+- Execute a **calibration flow** that zeroes position and orientation.  
+- Control a **3D SceneKit cube** using:  
+  - Orientation ← attitude quaternion  
+  - Translation ← integrated user acceleration  
+- Provide UI controls for:  
+  - Sample rate  
+  - Smoothing  
+  - Damping  
+  - Start / Stop / Re-Center  
+  - Demo Mode toggle  
 
 ---
 
-## 🧠 Project Structure
+## 🧱 Architecture  
 
-| File | Description |
-|------|--------------|
-| `MotionVM.swift` | Main ViewModel handling CoreMotion and simulated data. |
-| `BubbleLevelView.swift` | Circular bubble view displaying roll/pitch orientation. |
-| `OrientationCubeView.swift` | SceneKit 3D cube using quaternions for rotation. |
-| `OrientationRootView.swift` | Root SwiftUI view with UI controls and bindings. |
-| `MDI1_110_OrientationVisualizerApp.swift` | Main app entry point with `@main`. |
-
----
-
-## 🧩 Demo Logic Example
-
-```swift
-// Simplified demo mode from MotionVM.swift
-private func startDemo(updateHz: Double) {
-    demoTask = Task { [weak self] in
-        guard let self else { return }
-        var t: Double = 0
-        let dt = 1.0 / updateHz
-
-        while !Task.isCancelled {
-            try? await Task.sleep(nanoseconds: UInt64(dt * 1_000_000_000))
-            t += dt
-
-            let r = sin(t * 1.2) * 8
-            let p = cos(t * 0.9) * 6
-
-            // Quaternion rotation
-            let angle = t * 0.8
-            let axis = SIMD3<Double>(x: sin(t * 0.4), y: cos(t * 0.5), z: sin(t * 0.3))
-            let norm = simd_normalize(axis)
-            let halfAngle = angle / 2
-            let sinHalf = sin(halfAngle)
-            let qx = norm.x * sinHalf
-            let qy = norm.y * sinHalf
-            let qz = norm.z * sinHalf
-            let qw = cos(halfAngle)
-
-            await MainActor.run {
-                self.rollDeg = self.lowPass(current: r, previous: self.rollDeg)
-                self.pitchDeg = self.lowPass(current: p, previous: self.pitchDeg)
-                self.qx = qx; self.qy = qy; self.qz = qz; self.qw = qw
-                self.sampleHz = updateHz
-            }
-        }
-    }
-}
+### File Structure  
+```bash
+AcceloCubePro/
+│
+├── AcceloCubeProApp.swift # App entry point
+├── ContentView.swift # Main container view
+├── MotionVM.swift # ViewModel (CoreMotion, filtering, calibration)
+├── SceneViewBridge.swift # SceneKit cube visualization
+├── ControlPanelView.swift # Control panel (sliders, toggles, buttons)
+└── Assets.xcassets
 ```
----
-
-## 🧭 How to Run
-
-1. Open the project in **Xcode 16+**.  
-2. Choose a **simulator** (e.g., *iPhone 16 Pro*).  
-3. Run with **⌘ + R**.  
-4. Toggle **Demo mode** ON and press **Start**.  
-5. Watch the bubble and cube respond to simulated motion.
 
 ---
 
-## 📸 Screenshots
+### Main Components  
 
-| Bubble Centered | Rotating Cube |
-|----------------|----------------|
-| ![screenshot1](/screenshots/img1.png) | ![screenshot2](/screenshots/img2.png) |
+#### MotionVM.swift  
+- Manages the **CMMotionManager** lifecycle.  
+- Publishes quaternion, position, and status updates.  
+- Applies:  
+  - Low-pass smoothing filter (via `simd_slerp`)  
+  - Velocity/position integration  
+  - Damping and clamping  
+- Includes **Demo Mode** for sensor simulation when hardware is unavailable.  
+- Handles calibration, re-centering, and status updates.  
+
+#### SceneViewBridge.swift  
+- A **UIViewRepresentable** bridge for SceneKit.  
+- Displays a cube (`SCNBox`) with:  
+  - Ambient and directional lights  
+  - A fixed camera position  
+- Updates orientation and position each frame according to motion data.  
+
+#### ControlPanelView.swift  
+- Provides sliders and toggles for:  
+  - **Sample Rate (Hz)**  
+  - **Smoothing (Low-pass α)**  
+  - **Damping**  
+  - **Demo Mode**  
+- Includes **Start**, **Stop**, and **Re-Center** buttons that call the corresponding functions in the `MotionVM`.  
+
+#### ContentView.swift  
+- The main SwiftUI container combining:  
+  - The 3D Scene (`SceneViewBridge`)  
+  - The Control Panel (`ControlPanelView`)  
+  - A centered Status HUD showing:  
+    - Current status  
+    - Sample rate  
+    - Latency (ms)  
 
 ---
 
-## 🧩 Dependencies
+## ⚙️ Core Functionality  
 
-- **SwiftUI**
-- **CoreMotion**
-- **SceneKit**
-- **simd** (for vector normalization and quaternion generation)
+### Motion Processing Pipeline  
+
+1. Read CMDeviceMotion (attitude, gravity, userAcceleration).
+
+2. Apply low-pass smoothing (quaternion).
+
+3. Integrate user acceleration → velocity → position.
+
+4. Apply damping each frame: v *= (1 - damping).
+
+5. Clamp velocity/position to prevent numeric explosion.
+
+6. Publish values to SwiftUI via @Published properties.
+
 
 ---
 
-## 👨‍💻 Author
+### Calibration Flow  
 
-Developed by **Christian Bonilla**
+* Captures current quaternion as "neutral" orientation.
+
+* Resets velocity and position to zero.
+
+* Applies calibration offset on each update.
+
+
+---
+
+### Demo Mode  
+
+* Enabled automatically in the simulator or manually via toggle.
+
+* Generates smooth sinusoidal motion and quaternion rotation.
+
+* Uses a background Task with async sleep for timing.
+
+* Perfect for testing the app in the iOS Simulator without real sensors.
+
+![AcceloCube Demo](./demo.gif)
+
+
+---
+
+## 🧠 Filters & Parameters  
+
+| Parameter | Description | Typical Range |
+|------------|--------------|----------------|
+| `smoothing` | Low-pass α used for quaternion smoothing | 0.0 – 1.0 |
+| `damping` | Multiplier applied to velocity each frame | 0.0 – 0.2 |
+| `sampleHz` | DeviceMotion sampling frequency | 30 / 60 / 100 Hz |
+| `maxSpeed` | Velocity clamp limit | ±5.0 m/s |
+| `maxRange` | Position clamp limit | ±2.0 m |
+
+---
+
+## 🖥️ User Interface  
+
+- **Top:** SceneKit cube visualization  
+- **Middle:** Control panel (sliders + buttons)  
+- **Bottom:** Status HUD showing status, sample rate, and latency  
+
+```bash
+[ SceneView ]
+[ Start | Stop | Re-Center ]
+[ Hz: Slider ]
+[ Smoothing: Slider ]
+[ Damping: Slider ]
+[ Demo Mode: Toggle ]
+[ Status HUD ]
+```
+
+---
+
+## 🚀 Running the App  
+
+1. Open `AcceloCubePro.xcodeproj` in **Xcode 15+**.  
+2. Choose **an iPhone target**.  
+3. Press **Run (⌘R)**:  
+   - On a physical device → real sensor data.  
+   - In simulator → automatic **Demo Mode** activation.  
+4. Adjust sliders and observe cube behavior.  
+
+---
+
+## 🧩 Technical Notes  
+
+- CoreMotion updates are processed on a background `OperationQueue`.  
+- Published properties are updated on the main actor to keep SwiftUI reactive.  
+- SceneKit rendering uses a short animation transaction (0.05s) for smooth transitions.  
+- The demo loop uses `Task.sleep` for timing at the configured sample rate.  
